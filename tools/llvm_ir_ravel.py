@@ -1,0 +1,126 @@
+#!python3
+
+import os
+import re
+import subprocess
+
+test_cases_dir = "./tutorial/Compiler-Design-Implementation/testcases/codegen/"
+compile_command = "make"
+execute_command = "./bin/mxc"
+ravel_command = "./bin/ravel"
+test_dir = "./src/test/mx/"
+builtin_s = "./src/test/mx/builtin.s"
+start_testcase = ""
+
+def collect_test_cases():
+  test_cases = []
+  for dir in os.listdir(test_cases_dir):
+    if os.path.isfile(test_cases_dir + dir):
+      if os.path.splitext(dir)[1] == '.mx':
+        test_cases.append(dir)
+    elif os.path.isdir(test_cases_dir + dir):
+      for f in os.listdir(test_cases_dir + dir):
+        if f.split('.')[0] == start_testcase:
+          test_cases = []
+        if os.path.splitext(f)[1] == '.mx':
+          test_cases.append(dir + '/' + f)
+  test_cases.sort()
+  return test_cases
+
+def compile2ll():
+  mx2llvm = execute_command + " <" + (test_dir + "input.mx") + " >" + (test_dir + "output.ll")
+  print("Compiling to LLVM IR: " + mx2llvm)
+  compile_status, compile_output = subprocess.getstatusoutput(mx2llvm)
+  if (compile_status != 0):
+    print("Compile Error in input.mx: " + compile_output)
+    return False
+  return True
+
+def process_io(origin_input):
+  input_file = open(origin_input, 'r')
+  input_text = re.findall(r'=== input ===\n([\s\S]*?)\n=== end ===', input_file.read())
+  input_file_o = open(test_dir + "test.in", 'w')
+  input_file_o.writelines(input_text)
+  output_file = open(origin_input, 'r')
+  output_text = re.findall(r'=== output ===\n([\s\S]*?)\n=== end ===', output_file.read())
+  output_file_o = open(test_dir + "test.ans", 'w')
+  output_file_o.writelines(output_text)
+  result_file = open(origin_input, 'r')
+  result_text = re.findall(r'ExitCode: (\d+)', result_file.read())
+  return int(result_text[0])
+
+def compile2exe():
+  llvm2asm = "clang-16 -O2 -S --target=riscv32-unknown-elf " + test_dir + "output.ll -o " + test_dir + "output.s"
+  print("Compiling to executable: " + llvm2asm)
+  compile_status, compile_output = subprocess.getstatusoutput(llvm2asm)
+  if (compile_status != 0):
+    print("Compile Error when generating exe: " + compile_output)
+    return False
+  output_file = open(test_dir + "output.s", 'r')
+  # replace word in output_file
+  output_text = output_file.read()
+  output_text = output_text.replace("@plt", "")
+  output_file.close()
+  output_file = open(test_dir + "output.s", 'w')
+  output_file.write(output_text)
+  output_file.close()
+  return True
+
+def execute(file_io = False, expected_result = 0):
+  # example: ./bin/ravel test/output.s test/builtin.s
+  execute = ravel_command  + " " + test_dir + "output.s" + " " + builtin_s
+  if file_io:
+    execute += " --input-file=" + test_dir + "test.in" + " --output-file=" + test_dir + "test.out"
+  print("Executing: " + execute)
+  execute_output = subprocess.getoutput(execute)
+  execute_status = int((re.findall(r'exit code: (\d+)', execute_output))[0])
+  if (execute_status != expected_result):
+    print("Runtime Error: expected " + str(expected_result) + ", got " + str(execute_status));
+    print(execute_output)
+    return False
+  if file_io == False:
+    print("Output:")
+    print(execute_output)
+  return True
+
+def test(test_name):
+  input = test_cases_dir + test_name
+  print("Running testcase " + test_name)
+  subprocess.call("cp " + input + " " + test_dir + "input.mx", shell=True)
+  if compile2ll() == False:
+    return False
+  result = process_io(input)
+  if compile2exe() == False:
+    return False
+  if execute(file_io=True, expected_result=result) == False:
+    return False
+  diff = "diff -bB " + test_dir + "test.out " + test_dir + "test.ans"
+  compare_status_1, compare_output = subprocess.getstatusoutput(diff)
+  diff = "diff -w " + test_dir + "test.out " + test_dir + "test.ans"
+  compare_status_2, compare_output = subprocess.getstatusoutput(diff)
+  if (compare_status_1 != 0) & (compare_status_2 != 0) :
+    print("Wrong Answer: " + compare_output)
+    return False
+  return True
+
+def main():
+  subprocess.call("mkdir -p " + test_dir, shell=True)
+  collect_test_cases()
+  for test_name in collect_test_cases():
+    if test(test_name) == False:
+      break
+
+if __name__ == "__main__":
+  for arg in os.sys.argv:
+    if arg.startswith("--start="):
+      start_testcase = arg.split("=")[1]
+    if arg.startswith("--compile-exec"):
+      compile2ll()
+      compile2exe()
+      execute(file_io=False)
+      exit(0)
+    if arg.startswith("--exec-only"):
+      compile2exe()
+      execute(file_io=False)
+      exit(0)
+  main()

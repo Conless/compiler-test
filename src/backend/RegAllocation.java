@@ -16,7 +16,7 @@ import java.util.Stack;
 public class RegAllocation {
   ASMProgram program = null;
   ASMFunction curFunc = null;
-  public static final int K = 27;
+  public static final int K = 20;
   HashSet<Register> precolored = new HashSet<>(); // PhysicalRegister,precolored
   HashSet<Register> initial = new HashSet<>(); // VirtualRegister, not yet processed
   ArrayList<Register> simplifyWorklist = new ArrayList<>(); // low degree non-move-related
@@ -128,7 +128,10 @@ public class RegAllocation {
     while (!selectStack.isEmpty()) {
       Register reg = selectStack.pop();
       HashSet<Integer> okColors = new HashSet<>();
-      for (int i = 0; i < K; ++i) okColors.add(i + 5);
+      for (int i = 0; i < 27; ++i)
+        okColors.add(i + 5);
+      for (int i = 10; i <= 17; i++)
+        okColors.remove(i);
       for (var adj : adjList.get(reg)) {
         Register alias = GetAlias(adj);
         if (coloredNodes.contains(alias) || precolored.contains(alias))
